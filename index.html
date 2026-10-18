@@ -41,6 +41,9 @@ input[type=text],input[type=number],select{width:100%;padding:10px 12px;border-r
 .chk input{width:18px;height:18px;accent-color:var(--accent)}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:9}
 .err{background:var(--card);border:1px solid var(--owe);border-radius:14px;padding:18px;margin:20px 0}
+#who2 .sa{display:none;width:110px}
+#who2.byamt .sa{display:block}
+#who2.byamt .cb{display:none}
 code{background:var(--bg);padding:1px 5px;border-radius:5px;font-size:13px}
 pre{background:var(--bg);padding:12px;border-radius:10px;overflow:auto;font-size:12px}
 </style>
@@ -66,7 +69,7 @@ const firebaseConfig = {
 
 import {initializeApp} from "https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js";
 import {getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js";
-import {getFirestore,collection,doc,addDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,arrayUnion,serverTimestamp} from "https://www.gstatic.com/firebasejs/13.0.0/firebase-firestore.js";
+import {getFirestore,collection,doc,addDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,arrayUnion,serverTimestamp,setDoc,getDocs} from "https://www.gstatic.com/firebasejs/13.0.0/firebase-firestore.js";
 
 const $=s=>document.querySelector(s), app=$("#app"), dlg=$("#dlg");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -74,7 +77,7 @@ const configured=!firebaseConfig.apiKey.startsWith("YOUR_");
 let auth,db,user=null,groups=[],gid=null,group=null,expenses=[],unsubs=[];
 
 function toast(t){const e=document.createElement("div");e.className="toast";e.textContent=t;document.body.append(e);setTimeout(()=>e.remove(),2400)}
-const money=(c,cur="$")=>cur+(Math.abs(c)/100).toFixed(2);
+const money=c=>"₹"+(Math.abs(c)/100).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
 const avatar=m=>m?.photo?`<img class="av" src="${esc(m.photo)}" referrerpolicy="no-referrer" alt="">`:`<span class="av">${esc((m?.name||"?")[0])}</span>`;
 const firstName=(g,u)=>u===user.uid?"You":(g.memberInfo?.[u]?.name||"Someone").split(" ")[0];
 
@@ -85,7 +88,7 @@ function balances(){
   for(const e of expenses){
     if(e.type==="settle"){b[e.paidBy]=(b[e.paidBy]||0)+e.amount;b[e.to]=(b[e.to]||0)-e.amount;continue}
     b[e.paidBy]=(b[e.paidBy]||0)+e.amount;
-    const sh=splitEqual(e.amount,e.split);for(const u in sh)b[u]=(b[u]||0)-sh[u];
+    const sh=e.shares||splitEqual(e.amount,e.split);for(const u in sh)b[u]=(b[u]||0)-sh[u];
   }return b;
 }
 function simplify(b){
@@ -101,7 +104,7 @@ if(!configured){renderSetup()}else{
   onAuthStateChanged(auth,async u=>{
     user=u;
     $("#who").innerHTML=u?`<button class="btn sm" id="out">Sign out</button>`:"";
-    if(u){$("#out").onclick=()=>signOut(auth);await handleJoinLink();listenGroups();route()}
+    if(u){$("#out").onclick=()=>signOut(auth);setDoc(doc(db,"users",u.uid),{name:u.displayName||u.email,email:u.email||"",emailLower:(u.email||"").toLowerCase(),photo:u.photoURL||""}).catch(()=>{});await handleJoinLink();listenGroups();route()}
     else{unsubs.forEach(f=>f());unsubs=[];groups=[];renderLogin()}
   });
 }
@@ -131,6 +134,7 @@ let gUnsubs=[];
 function route(){
   gUnsubs.forEach(f=>f());gUnsubs=[];
   if(!gid)return renderGroups();
+  if(group?.id!==gid){group=null;expenses=[]}
   gUnsubs=[
     onSnapshot(doc(db,"groups",gid),s=>{group=s.exists()?{id:s.id,...s.data()}:null;renderGroup()}),
     onSnapshot(collection(db,"groups",gid,"expenses"),s=>{
@@ -161,7 +165,7 @@ function renderGroup(){
   app.innerHTML=`<button class="btn sm" id="back">‹ Groups</button>
   <h2>${esc(group.name)}</h2>
   <div class="sub">${mine===0?"You're all settled up":mine>0?`You are owed <b class="get">${money(mine,cur)}</b>`:`You owe <b class="owe">${money(mine,cur)}</b>`}</div>
-  <div class="bar"><button class="btn pri" id="add">Add expense</button><button class="btn" id="inv">Invite friends</button><button class="btn" id="del">Delete group</button></div>
+  <div class="bar"><button class="btn pri" id="add">Add expense</button><button class="btn" id="addf">Add by email</button><button class="btn" id="inv">Invite link</button><button class="btn" id="del">Delete group</button></div>
   <h3>Who owes whom</h3>
   <div class="card">${debts.length?debts.map(d=>`<div class="row">${avatar(group.memberInfo[d.from])}<div class="grow">${esc(firstName(group,d.from))} ${d.from===user.uid?"owe":"owes"} ${esc(firstName(group,d.to)).toLowerCase()==="you"?"you":esc(firstName(group,d.to))}</div><span class="amt ${d.from===user.uid?"owe":d.to===user.uid?"get":""}">${money(d.amount,cur)}</span>${d.from===user.uid||d.to===user.uid?`<button class="btn sm" data-settle="${d.from}|${d.to}|${d.amount}">Settle</button>`:""}</div>`).join(""):`<div class="empty">Nothing to settle.</div>`}</div>
   <h3>Members</h3>
@@ -169,7 +173,7 @@ function renderGroup(){
   <h3>Expenses</h3>
   <div class="card">${expenses.length?expenses.map(e=>expRow(e,cur)).join(""):`<div class="empty">No expenses yet. Add the first one.</div>`}</div>`;
   $("#back").onclick=()=>{gid=null;group=null;expenses=[];route()};
-  $("#add").onclick=expenseDialog;$("#inv").onclick=inviteDialog;$("#del").onclick=deleteGroup;
+  $("#add").onclick=expenseDialog;$("#addf").onclick=addFriendDialog;$("#inv").onclick=inviteDialog;$("#del").onclick=deleteGroup;
   app.querySelectorAll("[data-settle]").forEach(x=>x.onclick=()=>{const[f,t,a]=x.dataset.settle.split("|");settle(f,t,+a)});
   app.querySelectorAll("[data-rm]").forEach(x=>x.onclick=async()=>{if(confirm("Delete this entry?"))await deleteDoc(doc(db,"groups",gid,"expenses",x.dataset.rm))});
 }
@@ -179,8 +183,8 @@ function expRow(e,cur){
   let main,right;
   if(e.type==="settle"){main=`${esc(firstName(group,e.paidBy))} paid ${esc(firstName(group,e.to))}`;right=`<span class="amt get">${money(e.amount,cur)}</span>`}
   else{
-    main=`<b>${esc(e.desc)}</b><div class="sub">${esc(firstName(group,e.paidBy))} paid ${money(e.amount,cur)} · split ${e.split.length} way${e.split.length>1?"s":""} · ${when}</div>`;
-    const my=e.split.includes(user.uid)?splitEqual(e.amount,e.split)[user.uid]:0;
+    main=`<b>${esc(e.desc)}</b><div class="sub">${esc(firstName(group,e.paidBy))} paid ${money(e.amount,cur)} · ${e.mode==="amount"?"split by amount":"split equally"} between ${e.split.length} · ${when}</div>`;
+    const my=(e.shares||splitEqual(e.amount,e.split))[user.uid]||0;
     const net=(e.paidBy===user.uid?e.amount:0)-my;
     right=net===0?`<span class="sub">not involved</span>`:`<span class="amt ${net>0?"get":"owe"}">${net>0?"you lent ":"you borrowed "}${money(net,cur)}</span>`;
   }
@@ -197,6 +201,10 @@ function renderSetup(){
   <pre>rules_version = '2';
 service cloud.firestore {
   match /databases/{db}/documents {
+    match /users/{u} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &amp;&amp; request.auth.uid == u;
+    }
     match /groups/{g} {
       allow create: if request.auth != null
         &amp;&amp; request.auth.uid in request.resource.data.members;
@@ -220,14 +228,16 @@ service cloud.firestore {
 function openDlg(html){dlg.innerHTML=html;dlg.showModal();dlg.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>dlg.close())}
 
 function newGroupDialog(){
-  openDlg(`<h2>New group</h2><label>Group name</label><input type="text" id="gn" placeholder="Lisbon trip" maxlength="60">
-  <label>Currency</label><select id="gc"><option>$</option><option>€</option><option>£</option><option>₹</option><option>¥</option></select>
+  openDlg(`<h2>New group</h2><label>Group name</label><input type="text" id="gn" placeholder="Goa trip" maxlength="60">
   <div class="bar"><button class="btn pri" id="ok">Create group</button><button class="btn" data-close>Cancel</button></div>`);
   $("#ok").onclick=async()=>{
     const name=$("#gn").value.trim();if(!name)return toast("Enter a group name");
-    const ref=await addDoc(collection(db,"groups"),{name,currency:$("#gc").value,members:[user.uid],ownerId:user.uid,createdAt:serverTimestamp(),
-      memberInfo:{[user.uid]:{name:user.displayName||user.email,photo:user.photoURL||"",email:user.email||""}}});
-    dlg.close();gid=ref.id;route();inviteDialog();
+    dlg.close();
+    try{
+      const ref=await addDoc(collection(db,"groups"),{name,members:[user.uid],ownerId:user.uid,createdAt:serverTimestamp(),
+        memberInfo:{[user.uid]:{name:user.displayName||user.email,photo:user.photoURL||"",email:user.email||""}}});
+      gid=ref.id;route();toast("Group created");
+    }catch(e){toast(e.message)}
   };
 }
 
@@ -241,20 +251,65 @@ function inviteDialog(){
   $("#sh").onclick=()=>navigator.share?navigator.share({title:"Join "+group.name+" on Splitly",url:link}).catch(()=>{}):location.href=`mailto:?subject=${encodeURIComponent("Join "+group.name+" on Splitly")}&body=${encodeURIComponent(link)}`;
 }
 
+function addFriendDialog(){
+  openDlg(`<h2>Add a friend</h2><p class="sub">Search by the email of their Google account. They need to have signed in to Splitly once. If they haven't, send them the invite link.</p>
+  <label>Email</label><input type="text" id="fe" placeholder="friend@gmail.com" inputmode="email" autocapitalize="off">
+  <div class="bar"><button class="btn pri" id="fs">Search</button><button class="btn" id="fl">Invite link</button><button class="btn" data-close>Done</button></div><div id="fr"></div>`);
+  const run=async()=>{
+    const em=$("#fe").value.trim().toLowerCase();if(!em.includes("@"))return toast("Enter the full email address");
+    const out=$("#fr");out.innerHTML=`<div class="sub">Searching…</div>`;
+    try{
+      const snap=await getDocs(query(collection(db,"users"),where("emailLower","==",em)));
+      if(snap.empty){out.innerHTML=`<div class="empty">No one with that email has signed in yet. Send them the invite link instead.</div>`;return}
+      out.innerHTML=`<div class="card">${snap.docs.map(d=>{const u=d.data();return `<div class="row">${avatar(u)}<div class="grow">${esc(u.name)}<div class="sub">${esc(u.email)}</div></div>${group.members.includes(d.id)?`<span class="sub">In group</span>`:`<button class="btn sm pri" data-add="${d.id}">Add</button>`}</div>`}).join("")}</div>`;
+      out.querySelectorAll("[data-add]").forEach(b=>b.onclick=async()=>{
+        const id=b.dataset.add,u=snap.docs.find(x=>x.id===id).data();b.disabled=true;
+        try{
+          await updateDoc(doc(db,"groups",gid),{members:arrayUnion(id),["memberInfo."+id]:{name:u.name,photo:u.photo||"",email:u.email||""}});
+          b.outerHTML=`<span class="sub">Added</span>`;toast(u.name+" added to the group");
+        }catch(e){toast(e.message);b.disabled=false}
+      });
+    }catch(e){out.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
+  };
+  $("#fs").onclick=run;$("#fe").onkeydown=e=>{if(e.key==="Enter")run()};
+  $("#fl").onclick=inviteDialog;
+}
+
 function expenseDialog(){
-  const opts=group.members.map(m=>`<option value="${m}" ${m===user.uid?"selected":""}>${esc(firstName(group,m)==="You"?"You":group.memberInfo[m].name)}</option>`).join("");
+  const nm=m=>group.memberInfo[m]?.name||"Someone";
   openDlg(`<h2>Add expense</h2><label>Description</label><input type="text" id="ed" placeholder="Dinner" maxlength="80">
-  <label>Amount (${esc(group.currency||"$")})</label><input type="number" id="ea" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
-  <label>Paid by</label><select id="ep">${opts}</select>
-  <label>Split equally between</label>${group.members.map(m=>`<label class="chk"><input type="checkbox" value="${m}" checked>${esc(group.memberInfo[m].name)}</label>`).join("")}
+  <label>Amount (₹)</label><input type="number" id="ea" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+  <label>Paid by</label><select id="ep">${group.members.map(m=>`<option value="${m}" ${m===user.uid?"selected":""}>${esc(m===user.uid?"You":nm(m))}</option>`).join("")}</select>
+  <label>Split</label><select id="em"><option value="equal">Equally</option><option value="amount">By amount</option></select>
+  <div id="who2" style="margin-top:6px">${group.members.map(m=>`<label class="chk"><input type="checkbox" class="cb" value="${m}" checked><span class="grow">${esc(nm(m))}</span><input type="number" class="sa" data-u="${m}" inputmode="decimal" step="0.01" min="0" placeholder="0.00" aria-label="Amount for ${esc(nm(m))}"></label>`).join("")}</div>
+  <div class="sub" id="left"></div>
   <div class="bar"><button class="btn pri" id="ok">Save expense</button><button class="btn" data-close>Cancel</button></div>`);
+  const em=$("#em"),w=$("#who2"),left=$("#left"),cents=v=>Math.round((parseFloat(v)||0)*100);
+  const upd=()=>{
+    const byAmt=em.value==="amount";w.classList.toggle("byamt",byAmt);
+    if(!byAmt){left.textContent="";return}
+    const r=cents($("#ea").value)-[...w.querySelectorAll(".sa")].reduce((a,i)=>a+cents(i.value),0);
+    left.className="sub "+(r===0&&cents($("#ea").value)>0?"get":r<0?"owe":"");
+    left.textContent=r===0&&cents($("#ea").value)>0?"Fully assigned":r>0?money(r)+" left to assign":money(r)+" over the total";
+  };
+  ["#ea","#em","#who2"].forEach(q=>$(q).addEventListener("input",upd));
   $("#ok").onclick=async()=>{
-    const desc=$("#ed").value.trim(),amount=Math.round(parseFloat($("#ea").value)*100),
-      split=[...dlg.querySelectorAll("input[type=checkbox]:checked")].map(c=>c.value);
+    const desc=$("#ed").value.trim(),amount=cents($("#ea").value),mode=em.value;
     if(!desc||!(amount>0))return toast("Add a description and an amount");
-    if(!split.length)return toast("Pick at least one person to split with");
-    await addDoc(collection(db,"groups",gid,"expenses"),{type:"expense",desc,amount,paidBy:$("#ep").value,split,by:user.uid,createdAt:serverTimestamp()});
-    dlg.close();toast("Expense saved");
+    let split,shares;
+    if(mode==="amount"){
+      shares={};w.querySelectorAll(".sa").forEach(i=>{const c=cents(i.value);if(c>0)shares[i.dataset.u]=c});
+      const sum=Object.values(shares).reduce((a,b)=>a+b,0);
+      if(sum!==amount)return toast(sum<amount?"The amounts add up to less than the total":"The amounts add up to more than the total");
+      split=Object.keys(shares);
+    }else{
+      split=[...w.querySelectorAll(".cb:checked")].map(c=>c.value);
+      if(!split.length)return toast("Pick at least one person to split with");
+    }
+    const data={type:"expense",desc,amount,paidBy:$("#ep").value,split,mode,by:user.uid,createdAt:serverTimestamp()};
+    if(shares)data.shares=shares;
+    dlg.close();
+    try{await addDoc(collection(db,"groups",gid,"expenses"),data);toast("Expense saved")}catch(e){toast(e.message)}
   };
 }
 
