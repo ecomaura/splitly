@@ -54,16 +54,19 @@ pre{background:var(--bg);padding:12px;border-radius:10px;overflow:auto;font-size
 /* ============ 1. PASTE YOUR FIREBASE CONFIG HERE ============
    Firebase console → Project settings → Your apps → Web app → SDK config */
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyB5paiSOzS1djoUEbym7_vh-rTb2rYYPCA",
+  authDomain: "bucket-tracker-1d6cc.firebaseapp.com",
+  databaseURL: "https://bucket-tracker-1d6cc-default-rtdb.firebaseio.com",
+  projectId: "bucket-tracker-1d6cc",
+  storageBucket: "bucket-tracker-1d6cc.firebasestorage.app",
+  messagingSenderId: "699538557626",
+  appId: "1:699538557626:web:d7fba33d82c879d9e79083"
 };
 /* ============================================================ */
 
-import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,collection,doc,addDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,arrayUnion,serverTimestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {initializeApp} from "https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js";
+import {getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js";
+import {getFirestore,collection,doc,addDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,arrayUnion,serverTimestamp} from "https://www.gstatic.com/firebasejs/13.0.0/firebase-firestore.js";
 
 const $=s=>document.querySelector(s), app=$("#app"), dlg=$("#dlg");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
